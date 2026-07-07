@@ -30,13 +30,11 @@ Useful tuning overrides:
 USAGE
 }
 
-die() {
-  printf 'error: %s\n' "$*" >&2
-  exit 1
-}
-
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_dir="$(cd -- "$script_dir/.." && pwd)"
+# shellcheck source=shared/common.sh
+source "$script_dir/shared/common.sh"
+
 redis_dir="$repo_dir/redis"
 template_dir="${REDIS_TEMPLATE_DIR:-$redis_dir/templates}"
 output_dir="${REDIS_CONFIG_DIR:-$redis_dir/redis_config}"
@@ -66,58 +64,6 @@ done
 
 "$script_dir/redis-env-check.sh" ensure-env --env-file "$env_file"
 
-load_env_file() {
-  local file="$1"
-  local line key value
-
-  [[ -f "$file" ]] || die "missing env file: $file. Copy redis/.env.example to redis/.env first."
-
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    line="${line%$'\r'}"
-    [[ -z "${line//[[:space:]]/}" ]] && continue
-    [[ "$line" =~ ^[[:space:]]*# ]] && continue
-
-    if [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
-      key="${BASH_REMATCH[1]}"
-      value="${BASH_REMATCH[2]}"
-      value="${value#"${value%%[![:space:]]*}"}"
-      value="${value%"${value##*[![:space:]]}"}"
-
-      if [[ "$value" == \"*\" && "$value" == *\" ]] || [[ "$value" == \'*\' && "$value" == *\' ]]; then
-        value="${value:1:${#value}-2}"
-      fi
-
-      if [[ -z "${!key+x}" ]]; then
-        export "$key=$value"
-      fi
-    fi
-  done < "$file"
-}
-
-require_uint() {
-  local name="$1"
-  local value="$2"
-
-  [[ "$value" =~ ^[0-9]+$ ]] || die "$name must be an unsigned integer, got '$value'"
-}
-
-require_positive_uint() {
-  local name="$1"
-  local value="$2"
-
-  require_uint "$name" "$value"
-  (( value > 0 )) || die "$name must be greater than zero"
-}
-
-setting_int() {
-  local name="$1"
-  local default="$2"
-  local value="${!name:-$default}"
-
-  require_positive_uint "$name" "$value"
-  printf '%s\n' "$value"
-}
-
 require_password() {
   local name="$1"
   local value="${!name:-}"
@@ -125,63 +71,6 @@ require_password() {
   [[ -n "$value" ]] || die "$name is required in $env_file"
   [[ ! "$value" =~ [[:space:]#] ]] || die "$name cannot contain whitespace or #"
   printf '%s\n' "$value"
-}
-
-clamp_min() {
-  local value="$1"
-  local min="$2"
-
-  (( value < min )) && value="$min"
-  printf '%s\n' "$value"
-}
-
-round_to_step() {
-  local value="$1"
-  local step="$2"
-
-  printf '%s\n' "$(( ((value + (step / 2)) / step) * step ))"
-}
-
-detect_memory_mb() {
-  if [[ -n "${REDIS_MEMORY_MB:-}" ]]; then
-    require_positive_uint REDIS_MEMORY_MB "$REDIS_MEMORY_MB"
-    printf '%s\n' "$REDIS_MEMORY_MB"
-    return 0
-  fi
-
-  if [[ -r /proc/meminfo ]]; then
-    awk '/^MemTotal:/ { print int($2 / 1024); exit }' /proc/meminfo
-    return 0
-  fi
-
-  local pages page_size
-  if pages="$(getconf _PHYS_PAGES 2>/dev/null)" && page_size="$(getconf PAGE_SIZE 2>/dev/null)"; then
-    printf '%s\n' "$(( pages * page_size / 1024 / 1024 ))"
-    return 0
-  fi
-
-  die "could not detect host memory; set REDIS_MEMORY_MB"
-}
-
-detect_cpu_cores() {
-  if [[ -n "${REDIS_CPU_CORES:-}" ]]; then
-    require_positive_uint REDIS_CPU_CORES "$REDIS_CPU_CORES"
-    printf '%s\n' "$REDIS_CPU_CORES"
-    return 0
-  fi
-
-  if command -v nproc >/dev/null 2>&1; then
-    nproc
-    return 0
-  fi
-
-  local cores
-  if cores="$(getconf _NPROCESSORS_ONLN 2>/dev/null)"; then
-    printf '%s\n' "$cores"
-    return 0
-  fi
-
-  printf '1\n'
 }
 
 render_template() {
@@ -238,25 +127,25 @@ mem_limit_mb() {
   round_to_step "$limit_mb" 16
 }
 
-load_env_file "$env_file"
+load_env_file "$env_file" --preserve-existing
 
 cache_password="$(require_password REDIS_CACHE_PASSWORD)"
 session_password="$(require_password REDIS_SESSION_PASSWORD)"
 queue_password="$(require_password REDIS_QUEUE_PASSWORD)"
 ws_password="$(require_password REDIS_WS_PASSWORD)"
 
-memory_mb="$(detect_memory_mb)"
-cpu_cores="$(detect_cpu_cores)"
+memory_mb="$(detect_memory_mb REDIS_MEMORY_MB)"
+cpu_cores="$(detect_cpu_cores REDIS_CPU_CORES)"
 require_positive_uint detected_memory_mb "$memory_mb"
 require_positive_uint detected_cpu_cores "$cpu_cores"
 
-host_memory_reserve_percent="$(setting_int REDIS_HOST_MEMORY_RESERVE_PERCENT 10)"
+host_memory_reserve_percent="$(setting_positive_uint REDIS_HOST_MEMORY_RESERVE_PERCENT 10)"
 (( host_memory_reserve_percent < 100 )) || die "REDIS_HOST_MEMORY_RESERVE_PERCENT must be less than 100"
 host_memory_reserved_mb="$(( memory_mb * host_memory_reserve_percent / 100 ))"
 redis_tuning_memory_mb="$(( memory_mb - host_memory_reserved_mb ))"
 (( redis_tuning_memory_mb > 0 )) || die "Redis tuning memory must be greater than zero"
 
-redis_memory_budget_percent="$(setting_int REDIS_MEMORY_BUDGET_PERCENT 25)"
+redis_memory_budget_percent="$(setting_positive_uint REDIS_MEMORY_BUDGET_PERCENT 25)"
 (( redis_memory_budget_percent <= 100 )) || die "REDIS_MEMORY_BUDGET_PERCENT must be 100 or less"
 redis_memory_budget_mb="$(( redis_tuning_memory_mb * redis_memory_budget_percent / 100 ))"
 redis_memory_budget_mb="$(clamp_min "$redis_memory_budget_mb" 256)"
@@ -267,18 +156,18 @@ session_default_mb="$(round_to_step "$(( redis_memory_budget_mb * 13 / 100 ))" 1
 queue_default_mb="$(( redis_memory_budget_mb - cache_default_mb - ws_default_mb - session_default_mb ))"
 queue_default_mb="$(round_to_step "$queue_default_mb" 16)"
 
-cache_maxmemory_mb="$(setting_int REDIS_CACHE_MAXMEMORY_MB "$(clamp_min "$cache_default_mb" 64)")"
-ws_maxmemory_mb="$(setting_int REDIS_WS_MAXMEMORY_MB "$(clamp_min "$ws_default_mb" 32)")"
-session_maxmemory_mb="$(setting_int REDIS_SESSION_MAXMEMORY_MB "$(clamp_min "$session_default_mb" 64)")"
-queue_maxmemory_mb="$(setting_int REDIS_QUEUE_MAXMEMORY_MB "$(clamp_min "$queue_default_mb" 128)")"
+cache_maxmemory_mb="$(setting_positive_uint REDIS_CACHE_MAXMEMORY_MB "$(clamp_min "$cache_default_mb" 64)")"
+ws_maxmemory_mb="$(setting_positive_uint REDIS_WS_MAXMEMORY_MB "$(clamp_min "$ws_default_mb" 32)")"
+session_maxmemory_mb="$(setting_positive_uint REDIS_SESSION_MAXMEMORY_MB "$(clamp_min "$session_default_mb" 64)")"
+queue_maxmemory_mb="$(setting_positive_uint REDIS_QUEUE_MAXMEMORY_MB "$(clamp_min "$queue_default_mb" 128)")"
 
-container_overhead_percent="$(setting_int REDIS_CONTAINER_MEMORY_OVERHEAD_PERCENT 30)"
-queue_container_overhead_percent="$(setting_int REDIS_QUEUE_CONTAINER_MEMORY_OVERHEAD_PERCENT 50)"
+container_overhead_percent="$(setting_positive_uint REDIS_CONTAINER_MEMORY_OVERHEAD_PERCENT 30)"
+queue_container_overhead_percent="$(setting_positive_uint REDIS_QUEUE_CONTAINER_MEMORY_OVERHEAD_PERCENT 50)"
 
-cache_mem_limit_mb="$(setting_int REDIS_CACHE_MEM_LIMIT_MB "$(mem_limit_mb "$cache_maxmemory_mb" "$container_overhead_percent" 64)")"
-ws_mem_limit_mb="$(setting_int REDIS_WS_MEM_LIMIT_MB "$(mem_limit_mb "$ws_maxmemory_mb" "$container_overhead_percent" 64)")"
-session_mem_limit_mb="$(setting_int REDIS_SESSION_MEM_LIMIT_MB "$(mem_limit_mb "$session_maxmemory_mb" "$container_overhead_percent" 64)")"
-queue_mem_limit_mb="$(setting_int REDIS_QUEUE_MEM_LIMIT_MB "$(mem_limit_mb "$queue_maxmemory_mb" "$queue_container_overhead_percent" 128)")"
+cache_mem_limit_mb="$(setting_positive_uint REDIS_CACHE_MEM_LIMIT_MB "$(mem_limit_mb "$cache_maxmemory_mb" "$container_overhead_percent" 64)")"
+ws_mem_limit_mb="$(setting_positive_uint REDIS_WS_MEM_LIMIT_MB "$(mem_limit_mb "$ws_maxmemory_mb" "$container_overhead_percent" 64)")"
+session_mem_limit_mb="$(setting_positive_uint REDIS_SESSION_MEM_LIMIT_MB "$(mem_limit_mb "$session_maxmemory_mb" "$container_overhead_percent" 64)")"
+queue_mem_limit_mb="$(setting_positive_uint REDIS_QUEUE_MEM_LIMIT_MB "$(mem_limit_mb "$queue_maxmemory_mb" "$queue_container_overhead_percent" 128)")"
 
 generated_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 mkdir -p "$output_dir"

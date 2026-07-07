@@ -26,13 +26,11 @@ Useful .env overrides:
 USAGE
 }
 
-die() {
-  printf 'error: %s\n' "$*" >&2
-  exit 1
-}
-
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_dir="$(cd -- "$script_dir/.." && pwd)"
+# shellcheck source=shared/common.sh
+source "$script_dir/shared/common.sh"
+
 postgres_dir="$repo_dir/postgres"
 template_dir="${POSTGRES_TEMPLATE_DIR:-$postgres_dir/templates}"
 output_dir="${POSTGRES_CONFIG_DIR:-$postgres_dir/pg_config}"
@@ -61,128 +59,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 "$script_dir/postgres-env-check.sh" ensure-env --env-file "$env_file"
-
-load_env_file() {
-  local file="$1"
-  local line key value
-
-  [[ -f "$file" ]] || return 0
-
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    line="${line%$'\r'}"
-    [[ -z "${line//[[:space:]]/}" ]] && continue
-    [[ "$line" =~ ^[[:space:]]*# ]] && continue
-
-    if [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
-      key="${BASH_REMATCH[1]}"
-      value="${BASH_REMATCH[2]}"
-      value="${value#"${value%%[![:space:]]*}"}"
-      value="${value%"${value##*[![:space:]]}"}"
-
-      if [[ "$value" == \"*\" && "$value" == *\" ]] || [[ "$value" == \'*\' && "$value" == *\' ]]; then
-        value="${value:1:${#value}-2}"
-      fi
-
-      if [[ -z "${!key+x}" ]]; then
-        export "$key=$value"
-      fi
-    fi
-  done < "$file"
-}
-
-require_uint() {
-  local name="$1"
-  local value="$2"
-
-  [[ "$value" =~ ^[0-9]+$ ]] || die "$name must be an unsigned integer, got '$value'"
-}
-
-setting_int() {
-  local name="$1"
-  local default="$2"
-  local value="${!name:-$default}"
-
-  require_uint "$name" "$value"
-  printf '%s\n' "$value"
-}
-
-setting_raw() {
-  local name="$1"
-  local default="$2"
-  local value="${!name:-$default}"
-
-  [[ -n "$value" ]] || die "$name cannot be empty"
-  printf '%s\n' "$value"
-}
-
-clamp() {
-  local value="$1"
-  local min="$2"
-  local max="$3"
-
-  (( value < min )) && value="$min"
-  (( value > max )) && value="$max"
-  printf '%s\n' "$value"
-}
-
-round_to_step() {
-  local value="$1"
-  local step="$2"
-
-  printf '%s\n' "$(( ((value + (step / 2)) / step) * step ))"
-}
-
-format_mb() {
-  local value="$1"
-
-  if (( value >= 1024 && value % 1024 == 0 )); then
-    printf '%sGB\n' "$(( value / 1024 ))"
-  else
-    printf '%sMB\n' "$value"
-  fi
-}
-
-detect_memory_mb() {
-  if [[ -n "${POSTGRES_MEMORY_MB:-}" ]]; then
-    require_uint POSTGRES_MEMORY_MB "$POSTGRES_MEMORY_MB"
-    printf '%s\n' "$POSTGRES_MEMORY_MB"
-    return 0
-  fi
-
-  if [[ -r /proc/meminfo ]]; then
-    awk '/^MemTotal:/ { print int($2 / 1024); exit }' /proc/meminfo
-    return 0
-  fi
-
-  local pages page_size
-  if pages="$(getconf _PHYS_PAGES 2>/dev/null)" && page_size="$(getconf PAGE_SIZE 2>/dev/null)"; then
-    printf '%s\n' "$(( pages * page_size / 1024 / 1024 ))"
-    return 0
-  fi
-
-  die "could not detect host memory; set POSTGRES_MEMORY_MB"
-}
-
-detect_cpu_cores() {
-  if [[ -n "${POSTGRES_CPU_CORES:-}" ]]; then
-    require_uint POSTGRES_CPU_CORES "$POSTGRES_CPU_CORES"
-    printf '%s\n' "$POSTGRES_CPU_CORES"
-    return 0
-  fi
-
-  if command -v nproc >/dev/null 2>&1; then
-    nproc
-    return 0
-  fi
-
-  local cores
-  if cores="$(getconf _NPROCESSORS_ONLN 2>/dev/null)"; then
-    printf '%s\n' "$cores"
-    return 0
-  fi
-
-  printf '1\n'
-}
 
 build_allowed_cidr_lines() {
   local configured="${POSTGRES_ALLOWED_CIDRS:-10.1.0.0/16}"
@@ -242,16 +118,14 @@ render_template() {
   chmod 0644 "$output"
 }
 
-load_env_file "$env_file"
+load_env_file "$env_file" --preserve-existing
 
-memory_mb="$(detect_memory_mb)"
-cpu_cores="$(detect_cpu_cores)"
-require_uint detected_memory_mb "$memory_mb"
-require_uint detected_cpu_cores "$cpu_cores"
-(( memory_mb > 0 )) || die "detected memory must be greater than zero"
-(( cpu_cores > 0 )) || die "detected CPU cores must be greater than zero"
+memory_mb="$(detect_memory_mb POSTGRES_MEMORY_MB)"
+cpu_cores="$(detect_cpu_cores POSTGRES_CPU_CORES)"
+require_positive_uint detected_memory_mb "$memory_mb"
+require_positive_uint detected_cpu_cores "$cpu_cores"
 
-host_memory_reserve_percent="$(setting_int POSTGRES_HOST_MEMORY_RESERVE_PERCENT 10)"
+host_memory_reserve_percent="$(setting_uint POSTGRES_HOST_MEMORY_RESERVE_PERCENT 10)"
 (( host_memory_reserve_percent < 100 )) || die "POSTGRES_HOST_MEMORY_RESERVE_PERCENT must be less than 100"
 host_memory_reserved_mb="$(( memory_mb * host_memory_reserve_percent / 100 ))"
 postgres_tuning_memory_mb="$(( memory_mb - host_memory_reserved_mb ))"
@@ -262,7 +136,7 @@ max_connections_default="$(clamp "$max_connections_default" 50 200)"
 memory_connection_cap="$(( postgres_tuning_memory_mb / 64 ))"
 memory_connection_cap="$(clamp "$memory_connection_cap" 50 200)"
 (( max_connections_default > memory_connection_cap )) && max_connections_default="$memory_connection_cap"
-max_connections="$(setting_int POSTGRES_MAX_CONNECTIONS "$max_connections_default")"
+max_connections="$(setting_uint POSTGRES_MAX_CONNECTIONS "$max_connections_default")"
 
 shared_buffers_mb="$(( postgres_tuning_memory_mb / 4 ))"
 shared_buffers_mb="$(round_to_step "$shared_buffers_mb" 128)"
@@ -298,11 +172,11 @@ work_mem="$(setting_raw POSTGRES_WORK_MEM "$(format_mb "$work_mem_mb")")"
 maintenance_work_mem="$(setting_raw POSTGRES_MAINTENANCE_WORK_MEM "$(format_mb "$maintenance_work_mem_mb")")"
 max_wal_size="$(setting_raw POSTGRES_MAX_WAL_SIZE "$max_wal_size_default")"
 min_wal_size="$(setting_raw POSTGRES_MIN_WAL_SIZE "$min_wal_size_default")"
-max_worker_processes="$(setting_int POSTGRES_MAX_WORKER_PROCESSES "$(clamp "$cpu_cores" 8 32)")"
-max_parallel_workers="$(setting_int POSTGRES_MAX_PARALLEL_WORKERS "$(clamp "$cpu_cores" 2 16)")"
-max_parallel_workers_per_gather="$(setting_int POSTGRES_MAX_PARALLEL_WORKERS_PER_GATHER "$(clamp "$(( cpu_cores / 2 ))" 1 4)")"
-autovacuum_max_workers="$(setting_int POSTGRES_AUTOVACUUM_MAX_WORKERS "$(clamp "$(( cpu_cores / 2 ))" 3 8)")"
-log_min_duration_statement="$(setting_int POSTGRES_LOG_MIN_DURATION_STATEMENT 500)"
+max_worker_processes="$(setting_uint POSTGRES_MAX_WORKER_PROCESSES "$(clamp "$cpu_cores" 8 32)")"
+max_parallel_workers="$(setting_uint POSTGRES_MAX_PARALLEL_WORKERS "$(clamp "$cpu_cores" 2 16)")"
+max_parallel_workers_per_gather="$(setting_uint POSTGRES_MAX_PARALLEL_WORKERS_PER_GATHER "$(clamp "$(( cpu_cores / 2 ))" 1 4)")"
+autovacuum_max_workers="$(setting_uint POSTGRES_AUTOVACUUM_MAX_WORKERS "$(clamp "$(( cpu_cores / 2 ))" 3 8)")"
+log_min_duration_statement="$(setting_uint POSTGRES_LOG_MIN_DURATION_STATEMENT 500)"
 allowed_cidr_lines="$(build_allowed_cidr_lines)"
 generated_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 

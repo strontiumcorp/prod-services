@@ -14,13 +14,11 @@ Usage:
 USAGE
 }
 
-die() {
-  printf 'error: %s\n' "$*" >&2
-  exit 1
-}
-
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_dir="$(cd -- "$script_dir/.." && pwd)"
+# shellcheck source=shared/common.sh
+source "$script_dir/shared/common.sh"
+
 redis_dir="$repo_dir/redis"
 env_file="$redis_dir/.env"
 action="${1:-validate}"
@@ -51,45 +49,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-confirm() {
-  local prompt="$1"
-  local answer
-
-  if (( assume_yes == 1 )); then
-    return 0
-  fi
-
-  if [[ ! -t 0 ]]; then
-    return 1
-  fi
-
-  printf '%s [Y/n] ' "$prompt" >&2
-  IFS= read -r answer
-
-  case "$answer" in
-    ""|y|Y|yes|YES|Yes)
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
-generate_secret() {
-  if command -v openssl >/dev/null 2>&1; then
-    openssl rand -hex 32
-    return 0
-  fi
-
-  if command -v od >/dev/null 2>&1; then
-    od -An -N32 -tx1 /dev/urandom | tr -d ' \n'
-    return 0
-  fi
-
-  die "could not generate a random password; install openssl or provide Redis passwords manually"
-}
-
 create_env_file_if_missing() {
   local env_dir example_file
 
@@ -107,61 +66,6 @@ create_env_file_if_missing() {
   cp "$example_file" "$env_file"
   chmod 0600 "$env_file"
   printf 'Created %s from %s\n' "$env_file" "$example_file"
-}
-
-env_file_value() {
-  local name="$1"
-  local line key value found=""
-
-  [[ -f "$env_file" ]] || return 0
-
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    line="${line%$'\r'}"
-    [[ -z "${line//[[:space:]]/}" ]] && continue
-    [[ "$line" =~ ^[[:space:]]*# ]] && continue
-
-    if [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
-      key="${BASH_REMATCH[1]}"
-      value="${BASH_REMATCH[2]}"
-      [[ "$key" == "$name" ]] || continue
-
-      value="${value#"${value%%[![:space:]]*}"}"
-      value="${value%"${value##*[![:space:]]}"}"
-
-      if [[ "$value" == \"*\" && "$value" == *\" ]] || [[ "$value" == \'*\' && "$value" == *\' ]]; then
-        value="${value:1:${#value}-2}"
-      fi
-
-      found="$value"
-    fi
-  done < "$env_file"
-
-  printf '%s\n' "$found"
-}
-
-set_env_file_value() {
-  local name="$1"
-  local value="$2"
-  local tmp
-
-  tmp="$(mktemp "${env_file}.tmp.XXXXXX")"
-  awk -v key="$name" -v replacement="$name=$value" '
-    BEGIN { done = 0 }
-    $0 ~ "^[[:space:]]*" key "=" {
-      print replacement
-      done = 1
-      next
-    }
-    { print }
-    END {
-      if (done == 0) {
-        print replacement
-      }
-    }
-  ' "$env_file" > "$tmp"
-
-  mv "$tmp" "$env_file"
-  chmod 0600 "$env_file"
 }
 
 ensure_passwords() {
@@ -194,90 +98,12 @@ ensure_env_file() {
   chmod 0600 "$env_file"
 }
 
-load_env_file() {
-  local file="$1"
-  local line key value
-
-  [[ -f "$file" ]] || die "missing env file: $file. Copy redis/.env.example to redis/.env first."
-
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    line="${line%$'\r'}"
-    [[ -z "${line//[[:space:]]/}" ]] && continue
-    [[ "$line" =~ ^[[:space:]]*# ]] && continue
-
-    if [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
-      key="${BASH_REMATCH[1]}"
-      value="${BASH_REMATCH[2]}"
-      value="${value#"${value%%[![:space:]]*}"}"
-      value="${value%"${value##*[![:space:]]}"}"
-
-      if [[ "$value" == \"*\" && "$value" == *\" ]] || [[ "$value" == \'*\' && "$value" == *\' ]]; then
-        value="${value:1:${#value}-2}"
-      fi
-
-      export "$key=$value"
-    fi
-  done < "$file"
-}
-
-env_value() {
-  local name="$1"
-  local default="$2"
-  local value="${!name:-$default}"
-
-  printf '%s\n' "$value"
-}
-
-require_uint() {
-  local name="$1"
-  local value="$2"
-
-  [[ "$value" =~ ^[0-9]+$ ]] || die "$name must be an unsigned integer, got '$value'"
-}
-
-require_positive_uint() {
-  local name="$1"
-  local value="$2"
-
-  require_uint "$name" "$value"
-  (( value > 0 )) || die "$name must be greater than zero"
-}
-
-require_non_empty() {
-  local name="$1"
-  local value="$2"
-
-  [[ -n "$value" ]] || die "$name cannot be empty"
-}
-
 require_password() {
   local name="$1"
   local value="${!name:-}"
 
   require_non_empty "$name" "$value"
   [[ ! "$value" =~ [[:space:]#] ]] || die "$name cannot contain whitespace or #"
-}
-
-validate_optional_positive_uint() {
-  local name="$1"
-  local value="${!name:-}"
-
-  [[ -z "$value" ]] && return 0
-  require_positive_uint "$name" "$value"
-}
-
-validate_size_value() {
-  local name="$1"
-  local value="$2"
-
-  [[ "$value" =~ ^[0-9]+[kKmMgGtTpP]?[bB]?$ ]] || die "$name must be a size like 100m, 1gb, or 4096"
-}
-
-validate_duration_value() {
-  local name="$1"
-  local value="$2"
-
-  [[ "$value" =~ ^[0-9]+(ms|s|m|h)?$ ]] || die "$name must be a duration like 30s, 2m, or 1h"
 }
 
 validate_port() {
@@ -374,11 +200,7 @@ preview_env() {
 resolve_compose_path() {
   local path="$1"
 
-  if [[ "$path" = /* ]]; then
-    printf '%s\n' "$path"
-  else
-    printf '%s/%s\n' "$redis_dir" "$path"
-  fi
+  resolve_path_relative_to "$redis_dir" "$path"
 }
 
 prepare_one_data_dir() {
@@ -410,22 +232,22 @@ case "$action" in
     printf 'Redis .env is ready: %s\n' "$env_file"
     ;;
   validate)
-    load_env_file "$env_file"
+    load_required_env_file "$env_file" "missing env file: $env_file. Copy redis/.env.example to redis/.env first."
     validate_env
     printf 'Redis .env is valid: %s\n' "$env_file"
     ;;
   preview)
-    load_env_file "$env_file"
+    load_required_env_file "$env_file" "missing env file: $env_file. Copy redis/.env.example to redis/.env first."
     preview_env
     ;;
   check)
-    load_env_file "$env_file"
+    load_required_env_file "$env_file" "missing env file: $env_file. Copy redis/.env.example to redis/.env first."
     validate_env
     printf 'Redis .env is valid: %s\n' "$env_file"
     preview_env
     ;;
   prepare-data-dirs)
-    load_env_file "$env_file"
+    load_required_env_file "$env_file" "missing env file: $env_file. Copy redis/.env.example to redis/.env first."
     validate_env
     prepare_data_dirs
     ;;
