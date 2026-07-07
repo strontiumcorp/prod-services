@@ -36,6 +36,7 @@ cp redis/.env.example redis/.env
 
 ```sh
 make help
+make install docker
 make config db
 make serve db
 make config redis
@@ -45,6 +46,8 @@ make ensure-redis-env
 ```
 
 `db` and `postgres` are aliases, so `make config postgres` also works.
+`make install docker` installs Docker Engine and the Compose plugin on
+Debian/Ubuntu hosts.
 
 For non-interactive env bootstrap:
 

@@ -4,20 +4,24 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 KNOWN_SERVICES := db postgres redis
+KNOWN_INSTALLERS := docker
 SERVICE_ARG := $(firstword $(filter $(KNOWN_SERVICES),$(MAKECMDGOALS)))
 SERVICE := $(if $(SERVICE_ARG),$(SERVICE_ARG),db)
 CANONICAL_SERVICE := $(if $(filter postgres,$(SERVICE)),db,$(SERVICE))
-KNOWN_GOALS := help config serve db postgres redis config-db serve-db ensure-db-env validate-db-env preview-db-env ensure-db-config prepare-db-data-dir config-redis serve-redis ensure-redis-env validate-redis-env preview-redis-env ensure-redis-config prepare-redis-data-dirs
+INSTALL_ARG := $(firstword $(filter $(KNOWN_INSTALLERS),$(MAKECMDGOALS)))
+INSTALLER := $(if $(INSTALL_ARG),$(INSTALL_ARG),docker)
+KNOWN_GOALS := help install docker install-docker config serve db postgres redis config-db serve-db ensure-db-env validate-db-env preview-db-env ensure-db-config prepare-db-data-dir config-redis serve-redis ensure-redis-env validate-redis-env preview-redis-env ensure-redis-config prepare-redis-data-dirs
 UNKNOWN_GOALS := $(filter-out $(KNOWN_GOALS),$(MAKECMDGOALS))
 
 ifneq ($(UNKNOWN_GOALS),)
 $(error Unknown make goal(s): $(UNKNOWN_GOALS))
 endif
 
-.PHONY: help config serve db postgres redis config-db serve-db ensure-db-env validate-db-env preview-db-env ensure-db-config prepare-db-data-dir config-redis serve-redis ensure-redis-env validate-redis-env preview-redis-env ensure-redis-config prepare-redis-data-dirs
+.PHONY: help install docker install-docker config serve db postgres redis config-db serve-db ensure-db-env validate-db-env preview-db-env ensure-db-config prepare-db-data-dir config-redis serve-redis ensure-redis-env validate-redis-env preview-redis-env ensure-redis-config prepare-redis-data-dirs
 
 help:
 	@printf 'Usage:\n'
+	@printf '  make install docker  Install Docker Engine and Compose plugin on Debian/Ubuntu\n'
 	@printf '  make config db     Generate Postgres config from host resources\n'
 	@printf '  make serve db      Validate env, preview safe values, ensure config/data dir, start Postgres\n'
 	@printf '  make config redis  Generate Redis configs from host resources\n'
@@ -28,14 +32,20 @@ help:
 	@printf 'Aliases:\n'
 	@printf '  db and postgres both refer to the Postgres service\n'
 
+install:
+	@$(MAKE) --no-print-directory install-$(INSTALLER)
+
 config:
 	@$(MAKE) --no-print-directory config-$(CANONICAL_SERVICE)
 
 serve:
 	@$(MAKE) --no-print-directory serve-$(CANONICAL_SERVICE)
 
-db postgres redis:
+docker db postgres redis:
 	@:
+
+install-docker:
+	@scripts/install/docker.sh
 
 config-db:
 	@scripts/generate-postgres-config.sh

@@ -190,7 +190,7 @@ preview_env() {
   printf '  REDIS_MEMORY_MB=%s\n' "$(env_value REDIS_MEMORY_MB auto)"
   printf '  REDIS_CPU_CORES=%s\n' "$(env_value REDIS_CPU_CORES auto)"
   printf '  REDIS_HOST_MEMORY_RESERVE_PERCENT=%s\n' "$(env_value REDIS_HOST_MEMORY_RESERVE_PERCENT 10)"
-  printf '  REDIS_MEMORY_BUDGET_PERCENT=%s\n' "$(env_value REDIS_MEMORY_BUDGET_PERCENT 25)"
+  printf '  REDIS_MEMORY_BUDGET_PERCENT=%s\n' "$(env_value REDIS_MEMORY_BUDGET_PERCENT 70)"
   printf '  REDIS_STOP_GRACE_PERIOD=%s\n' "$(env_value REDIS_STOP_GRACE_PERIOD 30s)"
   printf '  REDIS_LOG_MAX_SIZE=%s\n' "$(env_value REDIS_LOG_MAX_SIZE 100m)"
   printf '  REDIS_LOG_MAX_FILE=%s\n' "$(env_value REDIS_LOG_MAX_FILE 5)"

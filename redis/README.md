@@ -43,19 +43,20 @@ configurable slice of the remaining memory:
 ```text
 host_reserved_memory = total_memory * 10%
 redis_tuning_memory = total_memory - host_reserved_memory
-redis_maxmemory_budget = redis_tuning_memory * 25%
+redis_maxmemory_budget = redis_tuning_memory * 70%
 ```
 
 The 10% reserve is for the host OS, Docker daemon, logging, monitoring, shell
-sessions, and filesystem activity outside Redis. The default 25% Redis budget
-is conservative because Redis can temporarily grow above `maxmemory` during
-persistence, replication, large deletes, or allocator fragmentation.
+sessions, and filesystem activity outside Redis. The default 70% Redis budget
+uses most of the remaining memory for Redis while leaving 30% for filesystem
+cache, persistence overhead, allocator fragmentation, Docker, and other host
+activity.
 
-For Redis-dedicated VMs, adjust:
+For Redis-dedicated VMs, the defaults are:
 
 ```sh
 REDIS_HOST_MEMORY_RESERVE_PERCENT=10
-REDIS_MEMORY_BUDGET_PERCENT=25
+REDIS_MEMORY_BUDGET_PERCENT=70
 ```
 
 The generated budget is distributed across the four Redis roles:

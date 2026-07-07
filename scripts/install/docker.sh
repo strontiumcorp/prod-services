@@ -92,6 +92,36 @@ target_docker_user() {
   fi
 }
 
+user_has_group() {
+  local user_name="$1"
+  local group_name="$2"
+  local current_group
+
+  for current_group in $(id -nG "$user_name" 2>/dev/null); do
+    [[ "$current_group" == "$group_name" ]] && return 0
+  done
+
+  return 1
+}
+
+group_entry_has_user() {
+  local group_name="$1"
+  local user_name="$2"
+  local group_entry members member
+  local -a member_list
+
+  group_entry="$(getent group "$group_name" 2>/dev/null || true)"
+  [[ -n "$group_entry" ]] || return 1
+
+  members="${group_entry##*:}"
+  IFS=',' read -r -a member_list <<< "$members"
+  for member in "${member_list[@]}"; do
+    [[ "$member" == "$user_name" ]] && return 0
+  done
+
+  return 1
+}
+
 configure_docker_group() {
   local user_name="$1"
 
@@ -107,6 +137,13 @@ configure_docker_group() {
   pinfo "Adding $user_name to the docker group."
   sudo_cmd groupadd -f docker
   sudo_cmd usermod -aG docker "$user_name"
+
+  if user_has_group "$user_name" docker || group_entry_has_user docker "$user_name"; then
+    psuccess "$user_name is configured as a member of the docker group."
+  else
+    die "failed to add $user_name to the docker group; check /etc/group and user account management for this VM"
+  fi
+
   pwarn "The docker group grants root-level access. Log out and back in before running docker without sudo."
 }
 
@@ -125,6 +162,7 @@ enable_services() {
 require_command apt-get
 require_command dpkg
 require_command dpkg-query
+require_command getent
 
 if (( EUID != 0 )); then
   require_command sudo

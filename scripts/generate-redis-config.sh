@@ -145,7 +145,7 @@ host_memory_reserved_mb="$(( memory_mb * host_memory_reserve_percent / 100 ))"
 redis_tuning_memory_mb="$(( memory_mb - host_memory_reserved_mb ))"
 (( redis_tuning_memory_mb > 0 )) || die "Redis tuning memory must be greater than zero"
 
-redis_memory_budget_percent="$(setting_positive_uint REDIS_MEMORY_BUDGET_PERCENT 25)"
+redis_memory_budget_percent="$(setting_positive_uint REDIS_MEMORY_BUDGET_PERCENT 70)"
 (( redis_memory_budget_percent <= 100 )) || die "REDIS_MEMORY_BUDGET_PERCENT must be 100 or less"
 redis_memory_budget_mb="$(( redis_tuning_memory_mb * redis_memory_budget_percent / 100 ))"
 redis_memory_budget_mb="$(clamp_min "$redis_memory_budget_mb" 256)"
