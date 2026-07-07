@@ -1,0 +1,6 @@
+.env
+data/
+
+# Generated from templates by scripts/generate-postgres-config.sh.
+pg_config/*.conf
+!pg_config/.gitkeep

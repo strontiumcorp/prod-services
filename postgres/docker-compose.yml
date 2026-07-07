@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:18.4-alpine}
+    container_name: ${POSTGRES_CONTAINER_NAME:-postgres}
+    init: true
+    ports:
+      - "${POSTGRES_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_HOST_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in postgres/.env}
+      POSTGRES_DB: ${POSTGRES_DB:-db_master}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - type: bind
+        source: ${POSTGRES_DATA_DIR:-./data}
+        target: /var/lib/postgresql/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./pg_config/postgresql.conf
+        target: /etc/postgresql/postgresql.conf
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./pg_config/pg_hba.conf
+        target: /etc/postgresql/pg_hba.conf
+        read_only: true
+        bind:
+          create_host_path: false
+    command:
+      - "-c"
+      - "config_file=/etc/postgresql/postgresql.conf"
+      - "-c"
+      - "hba_file=/etc/postgresql/pg_hba.conf"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\" -h 127.0.0.1 -p 5432"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+    stop_grace_period: ${POSTGRES_STOP_GRACE_PERIOD:-60s}
+    shm_size: ${POSTGRES_SHM_SIZE:-1gb}
+    pids_limit: ${POSTGRES_PIDS_LIMIT:-4096}
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: ${POSTGRES_LOG_MAX_SIZE:-100m}
+        max-file: "${POSTGRES_LOG_MAX_FILE:-5}"
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144

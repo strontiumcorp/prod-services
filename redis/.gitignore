@@ -1,0 +1,7 @@
+.env
+data/
+
+# Generated from templates by scripts/generate-redis-config.sh.
+redis_config/*.conf
+redis_config/compose.env
+!redis_config/.gitkeep

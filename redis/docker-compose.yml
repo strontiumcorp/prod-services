@@ -1,0 +1,176 @@
+services:
+  redis-cache:
+    image: ${REDIS_IMAGE:-redis:8.8.0-alpine}
+    container_name: ${REDIS_CACHE_CONTAINER_NAME:-redis-cache}
+    init: true
+    ports:
+      - "${REDIS_BIND_ADDRESS:-127.0.0.1}:${REDIS_CACHE_HOST_PORT:-6379}:6379"
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    volumes:
+      - type: bind
+        source: ${REDIS_CACHE_DATA_DIR:-./data/cache}
+        target: /data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./redis_config/cache.conf
+        target: /usr/local/etc/redis/redis.conf
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$(awk '/^requirepass / {print $$2; exit}' /usr/local/etc/redis/redis.conf) redis-cli -h 127.0.0.1 -p 6379 ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+    stop_grace_period: ${REDIS_STOP_GRACE_PERIOD:-30s}
+    mem_limit: ${REDIS_CACHE_MEM_LIMIT:?Run make config redis}
+    pids_limit: ${REDIS_PIDS_LIMIT:-4096}
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: ${REDIS_LOG_MAX_SIZE:-100m}
+        max-file: "${REDIS_LOG_MAX_FILE:-5}"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+  redis-ws:
+    image: ${REDIS_IMAGE:-redis:8.8.0-alpine}
+    container_name: ${REDIS_WS_CONTAINER_NAME:-redis-ws}
+    init: true
+    ports:
+      - "${REDIS_BIND_ADDRESS:-127.0.0.1}:${REDIS_WS_HOST_PORT:-6382}:6379"
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    volumes:
+      - type: bind
+        source: ${REDIS_WS_DATA_DIR:-./data/ws}
+        target: /data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./redis_config/ws.conf
+        target: /usr/local/etc/redis/redis.conf
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$(awk '/^requirepass / {print $$2; exit}' /usr/local/etc/redis/redis.conf) redis-cli -h 127.0.0.1 -p 6379 ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+    stop_grace_period: ${REDIS_STOP_GRACE_PERIOD:-30s}
+    mem_limit: ${REDIS_WS_MEM_LIMIT:?Run make config redis}
+    pids_limit: ${REDIS_PIDS_LIMIT:-4096}
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: ${REDIS_LOG_MAX_SIZE:-100m}
+        max-file: "${REDIS_LOG_MAX_FILE:-5}"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+  redis-session:
+    image: ${REDIS_IMAGE:-redis:8.8.0-alpine}
+    container_name: ${REDIS_SESSION_CONTAINER_NAME:-redis-session}
+    init: true
+    ports:
+      - "${REDIS_BIND_ADDRESS:-127.0.0.1}:${REDIS_SESSION_HOST_PORT:-6380}:6379"
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    volumes:
+      - type: bind
+        source: ${REDIS_SESSION_DATA_DIR:-./data/session}
+        target: /data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./redis_config/session.conf
+        target: /usr/local/etc/redis/redis.conf
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$(awk '/^requirepass / {print $$2; exit}' /usr/local/etc/redis/redis.conf) redis-cli -h 127.0.0.1 -p 6379 ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+    stop_grace_period: ${REDIS_STOP_GRACE_PERIOD:-30s}
+    mem_limit: ${REDIS_SESSION_MEM_LIMIT:?Run make config redis}
+    pids_limit: ${REDIS_PIDS_LIMIT:-4096}
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: ${REDIS_LOG_MAX_SIZE:-100m}
+        max-file: "${REDIS_LOG_MAX_FILE:-5}"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+  redis-queue:
+    image: ${REDIS_IMAGE:-redis:8.8.0-alpine}
+    container_name: ${REDIS_QUEUE_CONTAINER_NAME:-redis-queue}
+    init: true
+    ports:
+      - "${REDIS_BIND_ADDRESS:-127.0.0.1}:${REDIS_QUEUE_HOST_PORT:-6381}:6379"
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    volumes:
+      - type: bind
+        source: ${REDIS_QUEUE_DATA_DIR:-./data/queue}
+        target: /data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./redis_config/queue.conf
+        target: /usr/local/etc/redis/redis.conf
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$(awk '/^requirepass / {print $$2; exit}' /usr/local/etc/redis/redis.conf) redis-cli -h 127.0.0.1 -p 6379 ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+    stop_grace_period: ${REDIS_STOP_GRACE_PERIOD:-30s}
+    mem_limit: ${REDIS_QUEUE_MEM_LIMIT:?Run make config redis}
+    pids_limit: ${REDIS_PIDS_LIMIT:-4096}
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: ${REDIS_LOG_MAX_SIZE:-100m}
+        max-file: "${REDIS_LOG_MAX_FILE:-5}"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
