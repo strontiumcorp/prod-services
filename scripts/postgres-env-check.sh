@@ -123,7 +123,7 @@ validate_reserve_percent() {
 validate_cidrs() {
   local configured normalized cidr prefix max_prefix
 
-  configured="$(env_value POSTGRES_ALLOWED_CIDRS "10.1.0.0/16")"
+  configured="$(env_value POSTGRES_ALLOWED_CIDRS "10.1.0.0/24")"
   normalized="${configured//,/ }"
 
   for cidr in $normalized; do
@@ -177,7 +177,7 @@ preview_env() {
   printf '  POSTGRES_STOP_GRACE_PERIOD=%s\n' "$(env_value POSTGRES_STOP_GRACE_PERIOD 60s)"
   printf '  POSTGRES_LOG_MAX_SIZE=%s\n' "$(env_value POSTGRES_LOG_MAX_SIZE 100m)"
   printf '  POSTGRES_LOG_MAX_FILE=%s\n' "$(env_value POSTGRES_LOG_MAX_FILE 5)"
-  printf '  POSTGRES_ALLOWED_CIDRS=%s\n' "$(env_value POSTGRES_ALLOWED_CIDRS "10.1.0.0/16")"
+  printf '  POSTGRES_ALLOWED_CIDRS=%s\n' "$(env_value POSTGRES_ALLOWED_CIDRS "10.1.0.0/24")"
   printf '  POSTGRES_MEMORY_MB=%s\n' "$(env_value POSTGRES_MEMORY_MB auto)"
   printf '  POSTGRES_CPU_CORES=%s\n' "$(env_value POSTGRES_CPU_CORES auto)"
   printf '  POSTGRES_HOST_MEMORY_RESERVE_PERCENT=%s\n' "$(env_value POSTGRES_HOST_MEMORY_RESERVE_PERCENT 10)"

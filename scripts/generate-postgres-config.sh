@@ -61,7 +61,7 @@ done
 "$script_dir/postgres-env-check.sh" ensure-env --env-file "$env_file"
 
 build_allowed_cidr_lines() {
-  local configured="${POSTGRES_ALLOWED_CIDRS:-10.1.0.0/16}"
+  local configured="${POSTGRES_ALLOWED_CIDRS:-10.1.0.0/24}"
   local normalized cidr line output=""
 
   normalized="${configured//,/ }"

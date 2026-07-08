@@ -81,13 +81,61 @@ POSTGRES_HOST_PORT=5432
 POSTGRES_CONTAINER_NAME=postgres
 POSTGRES_IMAGE=postgres:18.4-alpine
 POSTGRES_DATA_DIR=./data
-POSTGRES_ALLOWED_CIDRS=10.1.0.0/16
+POSTGRES_ALLOWED_CIDRS=10.1.0.0/24
 ```
 
 `POSTGRES_BIND_ADDRESS` defaults to localhost so a new VM does not expose the
 database on every network interface. For app VMs on a private network, set it
 to the database VM's private IP and keep `POSTGRES_ALLOWED_CIDRS` limited to
 the application network.
+
+### Allowed CIDRs
+
+`POSTGRES_ALLOWED_CIDRS` controls which remote IP ranges are written to
+`pg_hba.conf`. CIDR means Classless Inter-Domain Routing. In practice, it is
+the standard `address/prefix-length` notation for describing one IP address or
+a range of IP addresses:
+
+```text
+network-or-host-address/prefix-length
+```
+
+The prefix length is how many bits of the address must match. IPv4 addresses
+have 32 bits total, split into four 8-bit octets:
+
+```text
+10 . 1 . 0 . 202
+8    8   8    8   bits
+```
+
+For IPv4, the prefix length must be from `/0` to `/32`. Larger numbers are
+more specific. Dropping 8 bits loosens the range by one octet:
+
+```text
+/32 = all 32 bits match   = one exact host
+/24 = 32 - 8 bits match   = first 3 octets match
+/16 = 32 - 8 - 8 match    = first 2 octets match
+```
+
+Common private-network examples:
+
+```sh
+# Allow exactly one app VM.
+POSTGRES_ALLOWED_CIDRS=10.1.0.202/32
+
+# Allow any host whose IP starts with 10.1.0.
+POSTGRES_ALLOWED_CIDRS=10.1.0.0/24
+
+# Allow any host whose IP starts with 10.1.
+POSTGRES_ALLOWED_CIDRS=10.1.0.0/16
+```
+
+`10.1.0.202/32` is an exact host address, so it only allows
+`10.1.0.202`. `10.1.0.0/24` allows the `10.1.0.x` network, and
+`10.1.0.0/16` allows the wider `10.1.x.x` network.
+
+Do not use netmask octets as the CIDR prefix. For example,
+`10.1.0.0/255` is invalid. If the netmask is `255.255.255.0`, use `/24`.
 
 The default image tracks the latest stable major version we selected for this
 repo. For an existing data directory, do not move across Postgres major
